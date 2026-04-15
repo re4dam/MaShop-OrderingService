@@ -15,6 +15,7 @@ builder.Services.AddDbContext<OrderingDbContext>(options =>
 
 // Register Processor and Subscriber
 builder.Services.AddSingleton<IEventProcessor, EventProcessor>();
+builder.Services.AddSingleton<IMessageBusClient, MessageBusClient>();
 builder.Services.AddHostedService<MessageBusSubscriber>();
 
 var app = builder.Build();

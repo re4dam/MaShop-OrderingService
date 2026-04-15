@@ -136,8 +136,7 @@ public class EventProcessor : IEventProcessor
                     {
                         Id = productPublishedDto.Id,
                         Name = productPublishedDto.Name,
-                        Price = productPublishedDto.Price,
-                        Quantity = productPublishedDto.UnitsInStock
+                        Price = productPublishedDto.Price
                     };
 
                     if (!dbContext.Products.Any(p => p.Id == product.Id))

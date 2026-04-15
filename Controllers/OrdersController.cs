@@ -4,6 +4,7 @@ using OrderingService.Data;
 using OrderingService.Models;
 using OrderingService.DTOs.OrderDTO;
 using OrderingService.DTOs.OrderItemDTO;
+using OrderingService.AsyncDataServices;
 
 namespace OrderingService.Controllers;
 
@@ -12,10 +13,12 @@ namespace OrderingService.Controllers;
 public class OrdersController : ControllerBase
 {
     private readonly OrderingDbContext _context;
+    private readonly IMessageBusClient _messageBusClient;
 
-    public OrdersController(OrderingDbContext context)
+    public OrdersController(OrderingDbContext context, IMessageBusClient messageBusClient)
     {
         _context = context;
+        _messageBusClient = messageBusClient;
     }
 
     // GET: api/orders
@@ -100,6 +103,25 @@ public class OrdersController : ControllerBase
 
         _context.Orders.Add(order);
         await _context.SaveChangesAsync();
+
+        // Publish to Message Bus
+        try
+        {
+            var orderCreatedDto = new OrderCreatedDto
+            {
+                OrderId = order.Id,
+                Items = order.OrderItems.Select(oi => new OrderCreatedItemDto
+                {
+                    ProductId = oi.ProductId,
+                    Quantity = oi.Quantity
+                }).ToList()
+            };
+            await _messageBusClient.PublishOrderCreated(orderCreatedDto);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"--> Could not send asynchronously: {ex.Message}");
+        }
 
         // Reload to include relations for the response
         var result = await _context.Orders
