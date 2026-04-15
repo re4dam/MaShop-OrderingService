@@ -61,30 +61,52 @@ public class EventProcessor : IEventProcessor
 
             var userPublishedDto = JsonSerializer.Deserialize<UserPublishedDto>(userPublishedMessage);
 
-            try
-            {
-                var user = new User
-                {
-                    Id = userPublishedDto!.Id,
-                    Name = userPublishedDto.Name,
-                    Address = userPublishedDto.Address,
-                    Contact = userPublishedDto.Contact
-                };
+            if (userPublishedDto == null) return;
 
-                if (!dbContext.Users.Any(u => u.Id == user.Id))
-                {
-                    dbContext.Users.Add(user);
-                    dbContext.SaveChanges();
-                    Console.WriteLine("--> User added to OrderingService database");
-                }
-                else
-                {
-                    Console.WriteLine("--> User already exists...");
-                }
-            }
-            catch (Exception ex)
+            using (var transaction = dbContext.Database.BeginTransaction())
             {
-                Console.WriteLine($"--> Could not add user to DB: {ex.Message}");
+                try
+                {
+                    // Idempotency Check
+                    if (dbContext.InboxMessages.Any(m => m.Id == userPublishedDto.MessageId))
+                    {
+                        Console.WriteLine($"--> Message {userPublishedDto.MessageId} already processed.");
+                        return;
+                    }
+
+                    var user = new User
+                    {
+                        Id = userPublishedDto.Id,
+                        Name = userPublishedDto.Name,
+                        Address = userPublishedDto.Address,
+                        Contact = userPublishedDto.Contact
+                    };
+
+                    if (!dbContext.Users.Any(u => u.Id == user.Id))
+                    {
+                        dbContext.Users.Add(user);
+                        Console.WriteLine("--> User added to OrderingService database");
+                    }
+                    else
+                    {
+                        Console.WriteLine("--> User already exists, but marking message as processed...");
+                    }
+
+                    // Track message
+                    dbContext.InboxMessages.Add(new InboxMessage 
+                    { 
+                        Id = userPublishedDto.MessageId, 
+                        ProcessedOn = DateTime.UtcNow 
+                    });
+
+                    dbContext.SaveChanges();
+                    transaction.Commit();
+                }
+                catch (Exception ex)
+                {
+                    transaction.Rollback();
+                    Console.WriteLine($"--> Could not process user event: {ex.Message}");
+                }
             }
         }
     }
@@ -97,30 +119,52 @@ public class EventProcessor : IEventProcessor
 
             var productPublishedDto = JsonSerializer.Deserialize<ProductPublishedDto>(productPublishedMessage);
 
-            try
-            {
-                var product = new Product
-                {
-                    Id = productPublishedDto!.Id,
-                    Name = productPublishedDto.Name,
-                    Price = productPublishedDto.Price,
-                    Quantity = productPublishedDto.UnitsInStock
-                };
+            if (productPublishedDto == null) return;
 
-                if (!dbContext.Products.Any(p => p.Id == product.Id))
-                {
-                    dbContext.Products.Add(product);
-                    dbContext.SaveChanges();
-                    Console.WriteLine("--> Product added to OrderingService database");
-                }
-                else
-                {
-                    Console.WriteLine("--> Product already exists...");
-                }
-            }
-            catch (Exception ex)
+            using (var transaction = dbContext.Database.BeginTransaction())
             {
-                Console.WriteLine($"--> Could not add product to DB: {ex.Message}");
+                try
+                {
+                    // Idempotency Check
+                    if (dbContext.InboxMessages.Any(m => m.Id == productPublishedDto.MessageId))
+                    {
+                        Console.WriteLine($"--> Message {productPublishedDto.MessageId} already processed.");
+                        return;
+                    }
+
+                    var product = new Product
+                    {
+                        Id = productPublishedDto.Id,
+                        Name = productPublishedDto.Name,
+                        Price = productPublishedDto.Price,
+                        Quantity = productPublishedDto.UnitsInStock
+                    };
+
+                    if (!dbContext.Products.Any(p => p.Id == product.Id))
+                    {
+                        dbContext.Products.Add(product);
+                        Console.WriteLine("--> Product added to OrderingService database");
+                    }
+                    else
+                    {
+                        Console.WriteLine("--> Product already exists, but marking message as processed...");
+                    }
+
+                    // Track message
+                    dbContext.InboxMessages.Add(new InboxMessage
+                    {
+                        Id = productPublishedDto.MessageId,
+                        ProcessedOn = DateTime.UtcNow
+                    });
+
+                    dbContext.SaveChanges();
+                    transaction.Commit();
+                }
+                catch (Exception ex)
+                {
+                    transaction.Rollback();
+                    Console.WriteLine($"--> Could not process product event: {ex.Message}");
+                }
             }
         }
     }

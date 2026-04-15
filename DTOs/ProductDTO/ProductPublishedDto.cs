@@ -2,6 +2,7 @@ namespace OrderingService.DTOs.ProductDTO;
 
 public class ProductPublishedDto
 {
+    public Guid MessageId { get; set; }
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public decimal Price { get; set; }
