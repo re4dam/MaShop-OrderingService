@@ -60,7 +60,8 @@ public class EventProcessor : IEventProcessor
                 {
                     Id = userPublishedDto!.Id,
                     Name = userPublishedDto.Name,
-                    Address = userPublishedDto.Address
+                    Address = userPublishedDto.Address,
+                    Contact = userPublishedDto.Contact
                 };
 
                 if (!dbContext.Users.Any(u => u.Id == user.Id))

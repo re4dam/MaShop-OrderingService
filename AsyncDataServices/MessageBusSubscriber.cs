@@ -18,30 +18,35 @@ public class MessageBusSubscriber : BackgroundService
     {
         _configuration = configuration;
         _eventProcessor = eventProcessor;
-
-        InitializeRabbitMQ();
     }
 
-    private void InitializeRabbitMQ()
+    private async Task InitializeRabbitMQ()
     {
         var factory = new ConnectionFactory()
         {
-            HostName = _configuration["RabbitMQHost"],
+            HostName = _configuration["RabbitMQHost"] ?? "localhost",
             Port = int.Parse(_configuration["RabbitMQPort"] ?? "5672")
         };
 
         try
         {
-            _connection = factory.CreateConnectionAsync().Result;
-            _channel = _connection.CreateChannelAsync().Result;
+            _connection = await factory.CreateConnectionAsync();
+            _channel = await _connection.CreateChannelAsync();
 
-            _channel.ExchangeDeclareAsync(exchange: "trigger", type: ExchangeType.Fanout);
-            _queueName = _channel.QueueDeclareAsync().Result.QueueName;
-            _channel.QueueBindAsync(queue: _queueName, exchange: "trigger", routingKey: "");
+            if (_channel != null)
+            {
+                await _channel.ExchangeDeclareAsync(exchange: "trigger", type: ExchangeType.Fanout);
+                var queueDeclareResponse = await _channel.QueueDeclareAsync();
+                _queueName = queueDeclareResponse.QueueName;
+                await _channel.QueueBindAsync(queue: _queueName, exchange: "trigger", routingKey: "");
+            }
+
+            if (_connection != null)
+            {
+                _connection.ConnectionShutdownAsync += RabbitMQ_ConnectionShutdown;
+            }
 
             Console.WriteLine("--> Listening on the Message Bus...");
-
-            _connection.ConnectionShutdownAsync += RabbitMQ_ConnectionShutdown;
         }
         catch (Exception ex)
         {
@@ -49,14 +54,16 @@ public class MessageBusSubscriber : BackgroundService
         }
     }
 
-    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         stoppingToken.ThrowIfCancellationRequested();
+
+        await InitializeRabbitMQ();
 
         if (_channel == null || _queueName == null)
         {
             Console.WriteLine("--> RabbitMQ Channel or Queue is not initialized.");
-            return Task.CompletedTask;
+            return;
         }
 
         var consumer = new AsyncEventingBasicConsumer(_channel);
@@ -73,9 +80,7 @@ public class MessageBusSubscriber : BackgroundService
             return Task.CompletedTask;
         };
 
-        _channel.BasicConsumeAsync(queue: _queueName, autoAck: true, consumer: consumer);
-
-        return Task.CompletedTask;
+        await _channel.BasicConsumeAsync(queue: _queueName, autoAck: true, consumer: consumer);
     }
 
     private Task RabbitMQ_ConnectionShutdown(object sender, ShutdownEventArgs e)
@@ -88,8 +93,8 @@ public class MessageBusSubscriber : BackgroundService
     {
         if (_channel?.IsOpen == true)
         {
-            _channel.CloseAsync().Wait();
-            _connection?.CloseAsync().Wait();
+            _channel.CloseAsync().GetAwaiter().GetResult();
+            _connection?.CloseAsync().GetAwaiter().GetResult();
         }
 
         base.Dispose();
