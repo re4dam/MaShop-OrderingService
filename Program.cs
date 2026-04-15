@@ -18,6 +18,9 @@ builder.Services.AddSingleton<IEventProcessor, EventProcessor>();
 builder.Services.AddSingleton<IMessageBusClient, MessageBusClient>();
 builder.Services.AddHostedService<MessageBusSubscriber>();
 
+// Register MediatR
+builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(Program).Assembly));
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.

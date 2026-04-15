@@ -12,6 +12,7 @@ public class OrderingDbContext : DbContext
     public DbSet<User> Users { get; set; }
     public DbSet<Product> Products { get; set; }
     public DbSet<InboxMessage> InboxMessages { get; set; }
+    public DbSet<OrderSummary> OrderSummaries { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
