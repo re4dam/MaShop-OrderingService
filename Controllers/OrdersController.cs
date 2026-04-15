@@ -24,11 +24,11 @@ public class OrdersController : ControllerBase
     {
         var orders = await _context.Orders
             .Include(o => o.OrderItems)
-            .ThenInclude(oi => oi.Product)
+                .ThenInclude(oi => oi.Product)
             .Include(o => o.User)
             .ToListAsync();
 
-        return orders.Select(o => MapToResponseDto(o)).ToList();
+        return Ok(orders.Select(o => MapToResponseDto(o)));
     }
 
     // GET: api/orders/{id}
@@ -37,24 +37,41 @@ public class OrdersController : ControllerBase
     {
         var order = await _context.Orders
             .Include(o => o.OrderItems)
-            .ThenInclude(oi => oi.Product)
+                .ThenInclude(oi => oi.Product)
             .Include(o => o.User)
             .FirstOrDefaultAsync(o => o.Id == id);
 
         if (order == null) return NotFound();
-        return MapToResponseDto(order);
+        return Ok(MapToResponseDto(order));
+    }
+
+    // GET: api/orders/user/{userId}
+    [HttpGet("user/{userId}")]
+    public async Task<ActionResult<IEnumerable<OrderResponseDto>>> GetOrdersByUser(Guid userId)
+    {
+        var orders = await _context.Orders
+            .Where(o => o.UserId == userId)
+            .Include(o => o.OrderItems)
+                .ThenInclude(oi => oi.Product)
+            .Include(o => o.User)
+            .ToListAsync();
+
+        return Ok(orders.Select(o => MapToResponseDto(o)));
     }
 
     // POST: api/orders
     [HttpPost]
     public async Task<ActionResult<OrderResponseDto>> CreateOrder(OrderRequestDto requestDto)
     {
-        var orderId = Guid.NewGuid();
+        var user = await _context.Users.FindAsync(requestDto.UserId);
+        if (user == null) return BadRequest("User not found.");
+
         var order = new Order
         {
-            Id = orderId,
+            Id = Guid.NewGuid(),
             UserId = requestDto.UserId,
             OrderDate = DateTime.UtcNow,
+            Status = OrderStatus.Pending,
             OrderItems = new List<OrderItem>()
         };
 
@@ -72,7 +89,7 @@ public class OrdersController : ControllerBase
             order.OrderItems.Add(new OrderItem
             {
                 Id = Guid.NewGuid(),
-                OrderId = orderId,
+                OrderId = order.Id,
                 ProductId = itemDto.ProductId,
                 Quantity = itemDto.Quantity,
                 UnitPrice = unitPrice
@@ -87,11 +104,27 @@ public class OrdersController : ControllerBase
         // Reload to include relations for the response
         var result = await _context.Orders
             .Include(o => o.OrderItems)
-            .ThenInclude(oi => oi.Product)
+                .ThenInclude(oi => oi.Product)
             .Include(o => o.User)
             .FirstAsync(o => o.Id == order.Id);
 
         return CreatedAtAction(nameof(GetOrder), new { id = order.Id }, MapToResponseDto(result));
+    }
+
+    // PATCH: api/orders/{id}/cancel
+    [HttpPatch("{id}/cancel")]
+    public async Task<IActionResult> CancelOrder(Guid id)
+    {
+        var order = await _context.Orders.FindAsync(id);
+        if (order == null) return NotFound();
+
+        if (order.Status == OrderStatus.Cancelled) return BadRequest("Order is already cancelled.");
+        if (order.Status == OrderStatus.Shipped) return BadRequest("Cannot cancel a shipped order.");
+
+        order.Status = OrderStatus.Cancelled;
+        await _context.SaveChangesAsync();
+
+        return NoContent();
     }
 
     // DELETE: api/orders/{id}
@@ -116,6 +149,7 @@ public class OrdersController : ControllerBase
             UserId = order.UserId,
             UserName = order.User?.Name ?? "Unknown",
             TotalAmount = order.TotalAmount,
+            Status = order.Status.ToString(),
             OrderItems = order.OrderItems.Select(oi => new OrderItemResponseDto
             {
                 Id = oi.Id,
