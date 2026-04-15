@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using OrderingService.Data;
+using OrderingService.EventProcessing;
+using OrderingService.AsyncDataServices;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,6 +12,10 @@ builder.Services.AddEndpointsApiExplorer();
 // Register DbContext (Using SQL Server)
 builder.Services.AddDbContext<OrderingDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// Register Processor and Subscriber
+builder.Services.AddSingleton<IEventProcessor, EventProcessor>();
+builder.Services.AddHostedService<MessageBusSubscriber>();
 
 var app = builder.Build();
 
