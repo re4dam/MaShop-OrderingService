@@ -36,5 +36,9 @@ public class OrderingDbContext : DbContext
             .HasMany(o => o.OrderItems)
             .WithOne()
             .HasForeignKey(oi => oi.OrderId);
+
+        modelBuilder.Entity<OrderSummary>()
+            .Property(o => o.TotalAmount)
+            .HasPrecision(18, 2); // or adjust as needed
     }
 }
