@@ -1,12 +1,10 @@
 using MediatR;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
 using OrderingService.Commands;
-using OrderingService.Events;
 using OrderingService.Data;
-using OrderingService.Models;
 using OrderingService.DTOs.OrderDTO;
 using OrderingService.DTOs.OrderItemDTO;
-using OrderingService.AsyncDataServices;
 
 namespace OrderingService.Handlers;
 
@@ -15,64 +13,61 @@ public class OrderCommandHandlers :
     IRequestHandler<ConfirmPaymentCommand, bool>,
     IRequestHandler<ShipOrderCommand, bool>
 {
-    private readonly OrderingDbContext _context;
-    private readonly IMessageBusClient _messageBusClient;
-    private readonly IMediator _mediator;
+    private readonly EventStoreRepository _repository;
+    private readonly string _connectionString;
 
-    public OrderCommandHandlers(OrderingDbContext context, IMessageBusClient messageBusClient, IMediator mediator)
+    public OrderCommandHandlers(EventStoreRepository repository, IConfiguration configuration)
     {
-        _context = context;
-        _messageBusClient = messageBusClient;
-        _mediator = mediator;
+        _repository = repository;
+        _connectionString = configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Missing connection string");
     }
 
     public async Task<OrderResponseDto> Handle(PlaceOrderCommand request, CancellationToken cancellationToken)
     {
-        var user = await _context.Users.FindAsync(new object[] { request.UserId }, cancellationToken);
-        if (user == null) throw new Exception("User not found.");
+        string userName = "Unknown User";
+        var itemsWithDetails = new List<(Guid ProductId, int Quantity, decimal UnitPrice)>();
 
-        var order = new Order(Guid.NewGuid(), request.UserId);
-
-        foreach (var itemDto in request.OrderItems)
+        // Fetch User and Product information using ADO.NET (No Entity Framework)
+        using (var connection = new SqlConnection(_connectionString))
         {
-            var product = await _context.Products.FindAsync(new object[] { itemDto.ProductId }, cancellationToken);
-            if (product == null) throw new Exception($"Product with ID {itemDto.ProductId} not found.");
+            await connection.OpenAsync(cancellationToken);
 
-            order.AddOrderItem(itemDto.ProductId, itemDto.Quantity, product.Price);
-        }
-
-        _context.Orders.Add(order);
-        await _context.SaveChangesAsync(cancellationToken);
-
-        // Populate Read Model via internal event
-        await _mediator.Publish(new OrderPlacedEvent(order, user.Name), cancellationToken);
-
-        // Publish to Message Bus
-        try
-        {
-            var orderCreatedDto = new OrderCreatedDto
+            // Fetch user
+            using (var userCmd = new SqlCommand("SELECT Name FROM Users WHERE Id = @Id", connection))
             {
-                OrderId = order.Id,
-                Items = order.OrderItems.Select(oi => new OrderCreatedItemDto
+                userCmd.Parameters.AddWithValue("@Id", request.UserId);
+                var result = await userCmd.ExecuteScalarAsync(cancellationToken);
+                if (result == null) throw new Exception("User not found.");
+                userName = (string)result;
+            }
+
+            // Fetch products
+            foreach (var item in request.OrderItems)
+            {
+                using (var prodCmd = new SqlCommand("SELECT Price FROM Products WHERE Id = @Id", connection))
                 {
-                    ProductId = oi.ProductId,
-                    Quantity = oi.Quantity
-                }).ToList()
-            };
-            await _messageBusClient.PublishOrderCreated(orderCreatedDto);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"--> Could not send asynchronously: {ex.Message}");
+                    prodCmd.Parameters.AddWithValue("@Id", item.ProductId);
+                    var priceResult = await prodCmd.ExecuteScalarAsync(cancellationToken);
+                    if (priceResult == null) throw new Exception($"Product with ID {item.ProductId} not found.");
+                    
+                    decimal price = (decimal)priceResult;
+                    itemsWithDetails.Add((item.ProductId, item.Quantity, price));
+                }
+            }
         }
 
-        // Return a response DTO (mapping can be improved)
+        var orderId = Guid.NewGuid();
+        var order = new OrderingService.Models.Order(orderId, request.UserId, userName, itemsWithDetails);
+
+        await _repository.SaveAsync(order);
+
+        // Map to Response DTO
         return new OrderResponseDto
         {
             Id = order.Id,
             OrderDate = order.OrderDate,
             UserId = order.UserId,
-            UserName = user.Name,
+            UserName = userName,
             TotalAmount = order.TotalAmount,
             Status = order.Status.ToString(),
             OrderItems = order.OrderItems.Select(oi => new OrderItemResponseDto
@@ -87,27 +82,21 @@ public class OrderCommandHandlers :
 
     public async Task<bool> Handle(ConfirmPaymentCommand request, CancellationToken cancellationToken)
     {
-        var order = await _context.Orders.FindAsync(new object[] { request.OrderId }, cancellationToken);
+        var order = await _repository.GetByIdAsync(request.OrderId);
         if (order == null) return false;
 
         order.MarkAsPaid();
-        await _context.SaveChangesAsync(cancellationToken);
-
-        await _mediator.Publish(new OrderStatusChangedEvent(order.Id, order.Status), cancellationToken);
-
+        await _repository.SaveAsync(order);
         return true;
     }
 
     public async Task<bool> Handle(ShipOrderCommand request, CancellationToken cancellationToken)
     {
-        var order = await _context.Orders.FindAsync(new object[] { request.OrderId }, cancellationToken);
+        var order = await _repository.GetByIdAsync(request.OrderId);
         if (order == null) return false;
 
         order.MarkAsShipped();
-        await _context.SaveChangesAsync(cancellationToken);
-
-        await _mediator.Publish(new OrderStatusChangedEvent(order.Id, order.Status), cancellationToken);
-
+        await _repository.SaveAsync(order);
         return true;
     }
 }

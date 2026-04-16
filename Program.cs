@@ -18,6 +18,14 @@ builder.Services.AddSingleton<IEventProcessor, EventProcessor>();
 builder.Services.AddSingleton<IMessageBusClient, MessageBusClient>();
 builder.Services.AddHostedService<MessageBusSubscriber>();
 
+// Register EventStoreDB
+var eventStoreConnectionString = builder.Configuration.GetConnectionString("EventStoreConnection") ?? "esdb://localhost:2113?tls=false&keepAliveTimeout=10000&keepAliveInterval=10000";
+builder.Services.AddSingleton(new EventStore.Client.EventStoreClient(EventStore.Client.EventStoreClientSettings.Create(eventStoreConnectionString)));
+builder.Services.AddScoped<EventStoreRepository>();
+
+// Register Projector
+builder.Services.AddHostedService<OrderProjector>();
+
 // Register MediatR
 builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(Program).Assembly));
 
