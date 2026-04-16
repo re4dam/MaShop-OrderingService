@@ -11,7 +11,8 @@ namespace OrderingService.Handlers;
 public class OrderCommandHandlers : 
     IRequestHandler<PlaceOrderCommand, OrderResponseDto>,
     IRequestHandler<ConfirmPaymentCommand, bool>,
-    IRequestHandler<ShipOrderCommand, bool>
+    IRequestHandler<ShipOrderCommand, bool>,
+    IRequestHandler<CancelOrderCommand, bool>
 {
     private readonly EventStoreRepository _repository;
     private readonly string _connectionString;
@@ -96,6 +97,16 @@ public class OrderCommandHandlers :
         if (order == null) return false;
 
         order.MarkAsShipped();
+        await _repository.SaveAsync(order);
+        return true;
+    }
+
+    public async Task<bool> Handle(CancelOrderCommand request, CancellationToken cancellationToken)
+    {
+        var order = await _repository.GetByIdAsync(request.OrderId);
+        if (order == null) return false;
+
+        order.Cancel();
         await _repository.SaveAsync(order);
         return true;
     }

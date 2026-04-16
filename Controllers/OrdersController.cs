@@ -68,4 +68,13 @@ public class OrdersController : ControllerBase
         if (!result) return BadRequest("Could not ship order.");
         return NoContent();
     }
+
+    // POST: api/orders/{id}/cancel
+    [HttpPost("{id}/cancel")]
+    public async Task<IActionResult> CancelOrder(Guid id)
+    {
+        var result = await _mediator.Send(new CancelOrderCommand(id));
+        if (!result) return BadRequest("Could not cancel order.");
+        return NoContent();
+    }
 }

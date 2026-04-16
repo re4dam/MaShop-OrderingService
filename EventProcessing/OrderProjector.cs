@@ -18,7 +18,7 @@ public class OrderProjector : BackgroundService
 
     public OrderProjector(
         EventStoreClient client, 
-        IServiceProvider serviceProvider, 
+        IServiceProvider serviceProvider,
         IMessageBusClient messageBusClient)
     {
         _client = client;
@@ -71,7 +71,7 @@ public class OrderProjector : BackgroundService
                             await context.SaveChangesAsync(cancellationToken);
                         }
 
-                        // 2. Notify ProductService via RabbitMQ
+                        // 2. Notify external services via RabbitMQ
                         var orderCreatedDto = new OrderCreatedDto
                         {
                             OrderId = placedEvent.OrderId,
@@ -124,8 +124,8 @@ public class OrderProjector : BackgroundService
                             await context.SaveChangesAsync(cancellationToken);
                         }
 
-                        // 2. Notify ProductService to Restore Stock
-                        var orderCancelledDto = new OrderCreatedDto // Reuse same DTO structure for simplicity
+                        // 2. Notify external services via RabbitMQ (Compensating)
+                        var orderCancelledDto = new OrderCreatedDto
                         {
                             OrderId = cancelledEvent.OrderId,
                             Event = "Order_Cancelled",

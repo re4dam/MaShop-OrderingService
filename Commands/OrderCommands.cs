@@ -9,3 +9,5 @@ public record PlaceOrderCommand(Guid UserId, List<OrderItemRequestDto> OrderItem
 public record ConfirmPaymentCommand(Guid OrderId) : IRequest<bool>;
 
 public record ShipOrderCommand(Guid OrderId) : IRequest<bool>;
+
+public record CancelOrderCommand(Guid OrderId) : IRequest<bool>;
